@@ -1,0 +1,62 @@
+========================================
+LAMBDA PACKAGING - START HERE
+========================================
+
+You ran package-lambda.bat but only got 3 ZIP files?
+Here's how to fix it:
+
+STEP 1: Try the improved script first
+--------------------------------------
+Run this command:
+
+    package-lambda-v2.bat
+
+This has better error handling and should create all 6 ZIP files.
+
+
+STEP 2: If that still fails, package individually
+---------------------------------------------------
+Run these 3 commands to create the missing ZIPs:
+
+    package-download.bat
+    package-transcribe.bat
+    package-api-gateway.bat
+
+Note: package-transcribe.bat takes 10-15 minutes!
+
+
+STEP 3: Verify all ZIPs are created
+------------------------------------
+Run this command:
+
+    dir opus-*.zip
+
+You should see 6 files:
+  ✓ opus-download.zip
+  ✓ opus-transcribe.zip  (very large ~1.8 GB)
+  ✓ opus-detect.zip
+  ✓ opus-process-clip.zip
+  ✓ opus-finalize.zip
+  ✓ opus-api-gateway.zip
+
+
+STEP 4: Clean up temporary folders
+-----------------------------------
+After successful packaging:
+
+    cleanup-temp.bat
+
+
+TROUBLESHOOTING
+---------------
+If you still have issues, read: PACKAGING-HELP.md
+
+
+NEXT STEPS
+----------
+Once all 6 ZIP files are created:
+1. Read QUICK-START.md for deployment
+2. Upload opus-transcribe.zip to S3 first
+3. Upload other ZIPs directly to Lambda
+
+========================================

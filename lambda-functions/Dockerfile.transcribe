@@ -1,0 +1,53 @@
+# Dockerfile.transcribe
+# AWS Lambda Python 3.11 base image
+FROM public.ecr.aws/lambda/python:3.11
+
+# Set working directory
+WORKDIR ${LAMBDA_TASK_ROOT}
+
+# -----------------------------
+# Install system dependencies
+# -----------------------------
+# Install wget and tar (tar supports .gz by default)
+RUN yum update -y && \
+    yum install -y wget tar && \
+    yum clean all && \
+    rm -rf /var/cache/yum
+
+# Download static ffmpeg binary (.tar.gz) and install to /usr/local/bin
+RUN wget https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.gz && \
+    tar -xzf ffmpeg-release-amd64-static.tar.gz --strip-components=1 -C /usr/local && \
+    rm -f ffmpeg-release-amd64-static.tar.gz
+
+# Verify ffmpeg installation
+RUN ffmpeg -version
+
+# -----------------------------
+# Python dependencies
+# -----------------------------
+# Copy requirements file
+COPY requirements-transcribe.txt .
+
+# Upgrade pip and install dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements-transcribe.txt
+
+# -----------------------------
+# Lambda function code
+# -----------------------------
+COPY 2-lambda-transcribe.py lambda_function.py
+
+# -----------------------------
+# Pre-download Whisper model
+# -----------------------------
+ARG WHISPER_MODEL=base
+RUN python -c "import whisper; whisper.load_model('${WHISPER_MODEL}')"
+
+# -----------------------------
+# Environment variables
+# -----------------------------
+ENV WHISPER_MODEL=${WHISPER_MODEL}
+ENV PYTHONUNBUFFERED=1
+
+# Lambda handler
+CMD ["lambda_function.lambda_handler"]

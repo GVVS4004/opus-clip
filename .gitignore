@@ -30,12 +30,12 @@ Thumbs.db
 *.swp
 *.swo
 *~
-
+*.gz
 # IDEs
 .vscode/
 .idea/
 *.sublime-*
-
+*.zip
 # Environment variables
 .env
 .env.local
