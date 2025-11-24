@@ -1,0 +1,23 @@
+[Unit]
+Description=Opus Clip Cloud - Viral Video Clip Extractor
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/opus-clip-cloud
+Environment="PATH=/home/ubuntu/opus-clip-cloud/venv/bin"
+ExecStart=/home/ubuntu/opus-clip-cloud/venv/bin/gunicorn -w 2 -b 0.0.0.0:5000 --timeout 1800 --access-logfile - --error-logfile - app_cloud:app
+Restart=always
+RestartSec=10
+
+# Resource limits (optional)
+LimitNOFILE=4096
+MemoryMax=20G
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
