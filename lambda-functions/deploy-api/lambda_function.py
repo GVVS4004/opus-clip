@@ -7,8 +7,26 @@ import boto3
 import uuid
 import os
 
+# Storage helper - works with S3, R2, B2, and any S3-compatible storage
+def get_storage_client():
+    """Get S3-compatible storage client (supports AWS S3, Cloudflare R2, Backblaze B2, etc.)"""
+    endpoint = os.environ.get('R2_ENDPOINT') or os.environ.get('STORAGE_ENDPOINT')
+    access_key = os.environ.get('R2_ACCESS_KEY') or os.environ.get('AWS_ACCESS_KEY_ID')
+    secret_key = os.environ.get('R2_SECRET_KEY') or os.environ.get('AWS_SECRET_ACCESS_KEY')
+
+    if endpoint:
+        print(f"[Storage] Using custom endpoint: {endpoint}")
+        return boto3.client('s3',
+            endpoint_url=endpoint,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            region_name=os.environ.get('AWS_REGION', 'auto')
+        )
+    print("[Storage] Using AWS S3 (default)")
+    return boto3.client('s3')
+
 stepfunctions = boto3.client('stepfunctions')
-s3 = boto3.client('s3')
+s3 = get_storage_client()
 
 STATE_MACHINE_ARN = os.environ.get('STATE_MACHINE_ARN')
 BUCKET_NAME = os.environ.get('BUCKET_NAME', 'opus-clip-videos')

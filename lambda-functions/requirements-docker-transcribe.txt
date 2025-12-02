@@ -1,0 +1,41 @@
+# Requirements for Docker-based Transcribe Lambda
+# With Smart Transcription (Local Whisper + Groq + AssemblyAI + Deepgram)
+
+# Core AWS SDK (usually pre-installed in Lambda Docker base images)
+boto3>=1.26.0
+
+# For API calls (Groq, AssemblyAI, Deepgram)
+# THIS IS THE ONLY NEW DEPENDENCY YOU NEED TO ADD
+requests>=2.31.0
+
+# Local Whisper and dependencies (if using local Whisper fallback)
+openai-whisper>=20231117
+torch>=2.0.0
+torchaudio>=2.0.0
+numpy>=1.24.0
+numba>=0.57.0
+
+# Note: ffmpeg should be available from your Docker base image or Lambda layer
+# If not, you need to add it to your Dockerfile
+
+# ============================================
+# MINIMAL VERSION (if you only want Groq/APIs, no local Whisper)
+# ============================================
+# boto3>=1.26.0
+# requests>=2.31.0
+#
+# This creates a much smaller Docker image (~100 MB instead of ~2 GB)
+# But you won't have local Whisper as fallback
+
+# ============================================
+# DEPLOYMENT NOTES
+# ============================================
+#
+# Your Dockerfile should have:
+# COPY requirements.txt .
+# RUN pip install -r requirements.txt --target "${LAMBDA_TASK_ROOT}"
+#
+# Make sure ffmpeg is available (usually from base image):
+# FROM public.ecr.aws/lambda/python:3.11
+# Or install in Dockerfile:
+# RUN yum install -y ffmpeg

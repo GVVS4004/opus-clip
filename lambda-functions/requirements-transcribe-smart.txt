@@ -1,0 +1,55 @@
+# Requirements for Smart Transcription Lambda
+# Supports: Local Whisper, Groq, AssemblyAI, Deepgram with automatic fallback
+
+# Core dependencies
+boto3>=1.26.0  # AWS SDK (usually pre-installed in Lambda)
+requests>=2.31.0  # For API calls (Groq, AssemblyAI, Deepgram)
+
+# Local Whisper dependencies (only needed if USE_LOCAL_WHISPER=true)
+# These are OPTIONAL - only include if you want local Whisper fallback
+openai-whisper>=20231117  # OpenAI Whisper model
+torch>=2.0.0  # PyTorch (Whisper dependency)
+torchaudio>=2.0.0  # Audio processing for Whisper
+numpy>=1.24.0  # NumPy (Whisper dependency)
+numba>=0.57.0  # JIT compiler for performance
+
+# Note: ffmpeg is required for audio extraction
+# Install via Lambda layer or include binary in deployment package
+# Get from: https://johnvansickle.com/ffmpeg/ (static builds)
+
+# ============================================
+# DEPLOYMENT NOTES
+# ============================================
+
+# For Groq API primary (recommended):
+# - Minimal dependencies: boto3 + requests
+# - Small Lambda package (<10 MB)
+# - Memory: 2048 MB
+# - Timeout: 180 seconds
+
+# For Local Whisper primary:
+# - Full dependencies including Whisper + PyTorch
+# - Large Lambda package (~1-2 GB)
+# - Memory: 10240 MB
+# - Timeout: 600 seconds
+# - Ephemeral storage: 2048 MB
+
+# ============================================
+# MINIMAL DEPLOYMENT (Groq API only)
+# ============================================
+# If you only want Groq API (no local Whisper fallback):
+#
+# boto3>=1.26.0
+# requests>=2.31.0
+#
+# This creates a tiny Lambda package and is sufficient for
+# Groq → AssemblyAI → Deepgram fallback chain
+
+# ============================================
+# FULL DEPLOYMENT (All providers)
+# ============================================
+# To support all providers including local Whisper,
+# use all dependencies listed above.
+#
+# Note: This will create a large Lambda package.
+# Consider using Lambda layers for PyTorch/Whisper.

@@ -1,0 +1,10 @@
+# Requirements for Groq-based Transcription Lambda
+# Ultra-fast transcription using Groq's FREE Whisper API
+
+# Core dependencies
+boto3>=1.26.0  # AWS SDK (usually pre-installed in Lambda)
+requests>=2.28.0  # For Groq API calls
+
+# Note: ffmpeg is required for audio extraction
+# Install via Lambda layer or include binary in deployment package
+# Get from: https://johnvansickle.com/ffmpeg/ (static builds)
