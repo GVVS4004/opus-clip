@@ -1,3 +1,5 @@
+# This is a backup file dont consider this for development 
+
 """
 Lambda Function 1: Download Video from YouTube
 Handles downloading YouTube video and uploading to S3
@@ -10,14 +12,12 @@ import os
 import subprocess
 import re
 import time
-
 # Storage helper - works with S3, R2, B2, and any S3-compatible storage
 def get_storage_client():
     """Get S3-compatible storage client (supports AWS S3, Cloudflare R2, Backblaze B2, etc.)"""
     endpoint = os.environ.get('R2_ENDPOINT') or os.environ.get('STORAGE_ENDPOINT')
     access_key = os.environ.get('R2_ACCESS_KEY') or os.environ.get('AWS_ACCESS_KEY_ID')
     secret_key = os.environ.get('R2_SECRET_KEY') or os.environ.get('AWS_SECRET_ACCESS_KEY')
-
     if endpoint:
         print(f"[Storage] Using custom endpoint: {endpoint}")
         return boto3.client('s3',
@@ -28,17 +28,20 @@ def get_storage_client():
         )
     print("[Storage] Using AWS S3 (default)")
     return boto3.client('s3')
-
 s3 = get_storage_client()
 BUCKET_NAME = os.environ.get('BUCKET_NAME', 'opus-clip-videos')
 COOKIES_S3_KEY = os.environ.get('COOKIES_S3_KEY', None)  # Optional: config/youtube-cookies.txt
-
 # Quality settings: 'fast' (480p), 'balanced' (480p), 'best' (1080p)
 QUALITY_MODE = os.environ.get('QUALITY_MODE', 'balanced')
-
 # Skip info fetch for maximum speed (skips duration check and some metadata)
 SKIP_INFO_FETCH = os.environ.get('SKIP_INFO_FETCH', 'false').lower() == 'true'
+NODE="/opt/bin/node"
+# Force yt-dlp to use Node.js JS engine (if needed)
+os.environ["YTDLP_JSPROP"] = "node"
+# Ensure /opt/bin is on PATH so yt-dlp / node / ffmpeg are found
+os.environ["PATH"] = "/opt/bin:" + os.environ.get("PATH", "")
 
+# os.listdir("/opt/bin")
 # S3 Transfer configuration for faster uploads
 transfer_config = TransferConfig(
     multipart_threshold=1024 * 25,  # 25 MB
@@ -91,7 +94,6 @@ def lambda_handler(event, context):
                print(f"[Download]   Bucket: {BUCKET_NAME}")
                print(f"[Download]   Key: {COOKIES_S3_KEY}")
                print(f"[Download]   Storage: {'R2' if os.environ.get('R2_ENDPOINT') else 'AWS S3'}")
-
                # Try to check if file exists first
                try:
                    s3.head_object(Bucket=BUCKET_NAME, Key=COOKIES_S3_KEY)
@@ -100,7 +102,6 @@ def lambda_handler(event, context):
                    print(f"[Download]   File NOT found in bucket: {str(head_error)}")
                    print(f"[Download]   Make sure file is uploaded to: {BUCKET_NAME}/{COOKIES_S3_KEY}")
                    raise head_error
-
                s3.download_file(BUCKET_NAME, COOKIES_S3_KEY, cookies_file)
                print("[Download] Cookies downloaded successfully")
            except Exception as e:
@@ -108,7 +109,6 @@ def lambda_handler(event, context):
                print(f"[Download] Continuing WITHOUT cookies (will use Android client)")
                cookies_file = None
        start_time = time.time()
-
        # Optionally skip info fetch for maximum speed
        if SKIP_INFO_FETCH:
            print("[Download] Skipping info fetch (SKIP_INFO_FETCH=true) - going straight to download")
@@ -124,13 +124,13 @@ def lambda_handler(event, context):
            # Get video info first using yt-dlp with speed optimizations
            print("[Download] Fetching video info...")
            info_start = time.time()
-
            info_cmd = [
                ytdlp_path,
                '--dump-json',
                '--no-playlist',
                '--no-check-formats',  # Skip format validation for speed
                '--skip-download',  # Only get info, don't download yet
+               '--remote-components', 'ejs:github',
            ]
            # With cookies, use default client (like your working local command)
            if cookies_file and os.path.exists(cookies_file):
@@ -183,7 +183,6 @@ def lambda_handler(event, context):
            s3.head_object(Bucket=BUCKET_NAME, Key=s3_key)
            print(f"[Download] Video already exists in storage: {s3_key}")
            print(f"[Download] Skipping download - using existing file")
-
            return {
                'statusCode': 200,
                'session_id': session_id,
@@ -192,28 +191,28 @@ def lambda_handler(event, context):
            }
        except:
            print(f"[Download] Video not found in storage, proceeding with download...")
-
        # Download video using yt-dlp with performance optimizations
        print(f"[Download] Downloading to {local_path}...")
        download_start = time.time()
-
        # Determine optimal format - AGGRESSIVE speed optimization
        # Using lower quality for MUCH faster downloads
+       # CRITICAL: Exclude HLS/DASH formats to avoid 403 errors on fragments
        if QUALITY_MODE == 'fast':
-           # Use 480p pre-merged format - VERY FAST, small file size
-           format_spec = 'best[height<=480][ext=mp4]/best[height<=480]/worst[height>=360]'
-           print("[Download] Mode: FAST - Using 480p max (smallest/fastest)")
+           # Use 480p progressive format - VERY FAST, NO HLS
+           format_spec = 'bv*[height<=480][ext=mp4]+ba[ext=m4a]/b[height<=480][ext=mp4][protocol!*=m3u8][protocol!*=dash]/b[height<=480]'
+           print("[Download] Mode: FAST - Using 480p max (no HLS/DASH)")
        elif QUALITY_MODE == 'best':
-           # Get best quality, may need merging
-           format_spec = 'best[height<=1080][ext=mp4]/best[height<=1080]/best'
-           print("[Download] Mode: BEST - Using 1080p max")
+           # Get best quality progressive format
+           format_spec = 'bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[height<=1080][ext=mp4][protocol!*=m3u8][protocol!*=dash]/b[height<=1080]'
+           print("[Download] Mode: BEST - Using 1080p max (no HLS/DASH)")
        else:  # balanced (default)
-           # Always use 480p for speed - it's good enough for most clips
-           format_spec = 'best[height<=480][ext=mp4]/best[height<=480]/worst[height>=360]'
-           print("[Download] Mode: BALANCED - Using 480p (optimized for speed)")
-
+           # Always use 480p progressive for speed - EXPLICITLY exclude m3u8 (HLS)
+           format_spec = 'bv*[height<=480][ext=mp4]+ba[ext=m4a]/b[height<=480][ext=mp4][protocol!*=m3u8][protocol!*=dash]/b[height<=480]'
+           print("[Download] Mode: BALANCED - Using 480p (excluding HLS to avoid 403)")
        download_cmd = [
            ytdlp_path,
+            '--remote-components', 'ejs:npm',
+            '--js-runtimes node:/opt/bin/node',
            '--format', format_spec,
            '--output', local_path,
            '--no-playlist',
@@ -236,7 +235,6 @@ def lambda_handler(event, context):
            download_cmd.extend(['--extractor-args', 'youtube:player_client=android'])
            download_cmd.extend(['--user-agent', 'com.google.android.youtube/17.36.4 (Linux; U; Android 12; GB) gzip'])
        download_cmd.append(youtube_url)
-
        print("[Download] Starting yt-dlp download (progress will be shown below)...")
        print(f"[Download] Expected file size: ~{video_info.get('duration', 0) * 0.5:.1f} MB (480p estimate)")
        try:
@@ -261,25 +259,20 @@ def lambda_handler(event, context):
        file_size = os.path.getsize(local_path)
        file_size_mb = file_size / (1024*1024)
        print(f"[Download] Downloaded {file_size_mb:.2f} MB")
-
        # Upload to S3 with multipart for faster transfer
        print(f"[Download] Uploading to S3: {s3_key}")
        upload_start = time.time()
-
        # Use multipart upload for files > 25MB
        if file_size > 25 * 1024 * 1024:
            print("[Download] Using multipart upload (10 concurrent threads)")
            s3.upload_file(local_path, BUCKET_NAME, s3_key, Config=transfer_config)
        else:
            s3.upload_file(local_path, BUCKET_NAME, s3_key)
-
        upload_time = time.time() - upload_start
        upload_speed_mbps = (file_size_mb / upload_time) if upload_time > 0 else 0
        print(f"[Download] Uploaded in {upload_time:.2f}s ({upload_speed_mbps:.2f} MB/s)")
-
        # Clean up local file
        os.remove(local_path)
-
        total_time = time.time() - start_time
        print(f"[Download] Complete! Total time: {total_time:.2f}s")
        return {
