@@ -76,9 +76,19 @@ opus-clip/
 │   ├── cookie-setup.md                 # YouTube cookie setup
 │   └── ytdlp-deployment.md             # yt-dlp layer deployment
 ├── src/                                # Source code
-│   ├── download/                       # Lambda 1: Download YouTube videos
+│   ├── cloudflare-worker-upload-proxy.js  # Optional: Cloudflare Worker for R2 uploads
+│   │
+│   ├── download/                       # Lambda 1a: Download (Python)
 │   │   ├── lambda_function.py          # Uses yt-dlp for downloads
 │   │   └── requirements.txt            # Dependencies: yt-dlp
+│   │
+│   ├── node-download/                  # Lambda 1b: Download (Node.js)
+│   │   ├── index.js                    # Uses yt-dlp for downloads
+│   │   └── package.json                # Dependencies: @aws-sdk/client-s3
+│   │
+│   ├── node-upload/                    # Lambda 1c: Upload handler (Node.js)
+│   │   ├── index.js                    # Pre-signed URL generation
+│   │   └── package.json                # Dependencies: @aws-sdk/s3-request-presigner
 │   │
 │   ├── transcribe/                     # Lambda 2: Smart transcription
 │   │   ├── lambda_function.py          # Multi-service with fallbacks
@@ -111,13 +121,35 @@ opus-clip/
     └── step-functions-*.json           # State machine definitions
 ```
 
+## 🔄 Python vs Node.js Lambda Functions
+
+Some functions are available in both Python and Node.js versions:
+
+### Download Lambda
+- **Python version** (`src/download/`): Original implementation, uses yt-dlp
+- **Node.js version** (`src/node-download/`): Alternative implementation with identical functionality
+- **Choose one**: Both versions do the same thing - download YouTube videos using yt-dlp
+
+### Upload Handler Lambda
+- **Python version** (`src/upload-api-gateway/`): REST API handler for upload flow
+- **Node.js version** (`src/node-upload/`): Alternative implementation for pre-signed URL generation
+- **Choose one**: Both handle video upload via pre-signed URLs
+
+### Cloudflare Worker (Optional)
+- **Cloudflare Worker** (`src/cloudflare-worker-upload-proxy.js`): Optional proxy for R2 uploads
+- **Use case**: Bypasses CORS issues when uploading directly from browser to R2
+- **Deploy to**: Cloudflare Workers (not AWS Lambda)
+
+**Recommendation:** Use Python versions for consistency with the rest of the pipeline, or Node.js versions if your team prefers JavaScript.
+
 ## 🚀 Quick Start
 
 ### Prerequisites
 
 - AWS Account with Lambda, S3, and Step Functions access
 - AWS CLI configured (`aws configure`)
-- Python 3.11+
+- **For Python lambdas**: Python 3.11+
+- **For Node.js lambdas** (optional): Node.js 18+ and npm
 - Storage: AWS S3 OR Cloudflare R2 (recommended, 10GB free)
 - API Keys:
   - Groq API (free, for transcription & clip detection)
@@ -179,7 +211,7 @@ aws lambda create-function \
   --memory-size 3072 \
   --timeout 600
 
-# Download Lambda (needs yt-dlp)
+# Download Lambda - Python version (needs yt-dlp)
 cd opus-clip/src/download
 pip install -r requirements.txt -t ./package
 cd package && zip -r ../function.zip . && cd ..
@@ -192,6 +224,36 @@ aws lambda create-function \
   --zip-file fileb://function.zip \
   --memory-size 3072 \
   --timeout 300
+```
+
+**Node.js Lambda Functions (Alternative):**
+
+```bash
+# Node.js Download Lambda (alternative to Python download)
+cd opus-clip/src/node-download
+npm install
+zip -r function.zip index.js node_modules/
+aws lambda create-function \
+  --function-name opus-node-download \
+  --runtime nodejs18.x \
+  --handler index.handler \
+  --role arn:aws:iam::YOUR_ACCOUNT:role/lambda-execution-role \
+  --zip-file fileb://function.zip \
+  --memory-size 3072 \
+  --timeout 300
+
+# Node.js Upload Lambda (pre-signed URL generation)
+cd opus-clip/src/node-upload
+npm install
+zip -r function.zip index.js node_modules/
+aws lambda create-function \
+  --function-name opus-node-upload \
+  --runtime nodejs18.x \
+  --handler index.handler \
+  --role arn:aws:iam::YOUR_ACCOUNT:role/lambda-execution-role \
+  --zip-file fileb://function.zip \
+  --memory-size 512 \
+  --timeout 30
 ```
 
 ### 3. Attach Lambda Layers
@@ -311,17 +373,22 @@ curl -X POST https://your-api-gateway-url/upload/start \
 
 ## 📊 Lambda Functions Overview
 
-| Function | Purpose | Memory | Timeout | Pip Dependencies | Binary Dependencies |
-|----------|---------|--------|---------|------------------|---------------------|
-| **download** | Downloads YouTube videos | 3 GB | 5 min | yt-dlp | Node.js, FFmpeg (layer) |
-| **transcribe** | Transcribes audio with AI | 3 GB | 10 min | requests | - |
-| **detect-clips** | AI-powered clip detection | 2 GB | 2 min | **None!** | - |
-| **process-clip** | Extracts clips + karaoke subs | 4 GB | 5 min | **None!** | FFmpeg (layer) |
-| **finalize** | Generates download URLs | 512 MB | 30 sec | **None!** | - |
-| **api-gateway** | Handles YouTube flow API | 512 MB | 30 sec | **None!** | - |
-| **upload-api-gateway** | Handles upload flow API | 512 MB | 30 sec | **None!** | - |
+| Function | Language | Purpose | Memory | Timeout | Dependencies | Binary Layers |
+|----------|----------|---------|--------|---------|--------------|---------------|
+| **download** (Python) | Python 3.11 | Downloads YouTube videos | 3 GB | 5 min | yt-dlp | yt-dlp layer |
+| **node-download** (Node.js) | Node.js 18+ | Downloads YouTube videos | 3 GB | 5 min | @aws-sdk/client-s3, @aws-sdk/lib-storage | yt-dlp layer |
+| **node-upload** (Node.js) | Node.js 18+ | Pre-signed URL generation | 512 MB | 30 sec | @aws-sdk/client-s3, @aws-sdk/s3-request-presigner | - |
+| **transcribe** | Python 3.11 | Transcribes audio with AI | 3 GB | 10 min | requests | - |
+| **detect-clips** | Python 3.11 | AI-powered clip detection | 2 GB | 2 min | **None!** | - |
+| **process-clip** | Python 3.11 | Extracts clips + karaoke subs | 4 GB | 5 min | **None!** | FFmpeg layer |
+| **finalize** | Python 3.11 | Generates download URLs | 512 MB | 30 sec | **None!** | - |
+| **api-gateway** | Python 3.11 | Handles YouTube flow API | 512 MB | 30 sec | **None!** | - |
+| **upload-api-gateway** | Python 3.11 | Handles upload flow API | 512 MB | 30 sec | **None!** | - |
 
-**Note:** boto3 and botocore are pre-installed in AWS Lambda runtime - no need to package them!
+**Notes:**
+- **Python**: boto3 and botocore are pre-installed in AWS Lambda runtime - no need to package them!
+- **Node.js**: You can use either Python or Node.js versions for download functionality - both are functionally equivalent
+- **node-upload**: Alternative to Python upload-api-gateway for upload URL generation
 
 ## ⚙️ Configuration Options
 
